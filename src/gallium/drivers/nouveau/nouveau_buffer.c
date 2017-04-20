@@ -411,9 +411,6 @@ nouveau_buffer_transfer_map(struct pipe_context *pipe,
        !util_ranges_intersect(&buf->valid_buffer_range, box->x, box->x + box->width))
       usage |= PIPE_TRANSFER_DISCARD_RANGE | PIPE_TRANSFER_UNSYNCHRONIZED;
 
-   if (usage & PIPE_TRANSFER_PERSISTENT)
-      usage |= PIPE_TRANSFER_UNSYNCHRONIZED;
-
    if (buf->domain == NOUVEAU_BO_VRAM) {
       if (usage & NOUVEAU_TRANSFER_DISCARD) {
          /* Set up a staging area for the user to write to. It will be copied
@@ -486,7 +483,8 @@ nouveau_buffer_transfer_map(struct pipe_context *pipe,
     * complete its operation, or set up a staging area to perform our work in.
     */
    if (nouveau_buffer_busy(buf, usage & PIPE_TRANSFER_READ_WRITE)) {
-      if (unlikely(usage & PIPE_TRANSFER_DISCARD_WHOLE_RESOURCE)) {
+      if (unlikely(usage & (PIPE_TRANSFER_DISCARD_WHOLE_RESOURCE |
+                            PIPE_TRANSFER_PERSISTENT))) {
          /* Discarding was not possible, must sync because
           * subsequent transfers might use UNSYNCHRONIZED. */
          pipe_mutex_lock(screen->push_mutex);
