@@ -33,6 +33,7 @@ LOCAL_SRC_FILES := $(COMMON_FILES)
 
 LOCAL_C_INCLUDES := \
 	external/zlib \
+	external/expat/lib \
 	$(MESA_TOP)/src/gallium/include \
 	$(MESA_TOP)/src/gallium/auxiliary \
 	$(MESA_TOP)/src/mapi \

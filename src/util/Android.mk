@@ -36,6 +36,7 @@ LOCAL_SRC_FILES := \
 
 LOCAL_C_INCLUDES := \
 	external/zlib \
+	external/expat/lib \
 	$(MESA_TOP)/src/mesa \
 	$(MESA_TOP)/src/mapi \
 	$(MESA_TOP)/src/gallium/include \
@@ -45,6 +46,8 @@ LOCAL_SHARED_LIBRARIES := \
 	libexpat
 
 LOCAL_MODULE := libmesa_util
+
+LOCAL_CLANG := false
 
 # Generated sources
 

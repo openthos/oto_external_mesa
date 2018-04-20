@@ -90,7 +90,7 @@ endif
 
 define mesa-build-with-llvm
   $(if $(filter $(MESA_ANDROID_MAJOR_VERSION), 4 5), \
-    $(warning Unsupported LLVM version in Android $(MESA_ANDROID_MAJOR_VERSION)),) \
+    $(eval LOCAL_CFLAGS += -DHAVE_LLVM=0x0600 -DMESA_LLVM_VERSION_PATCH=0)) \
   $(if $(filter 6,$(MESA_ANDROID_MAJOR_VERSION)), \
     $(eval LOCAL_CFLAGS += -DHAVE_LLVM=0x0307 -DMESA_LLVM_VERSION_PATCH=0)) \
   $(if $(filter 7,$(MESA_ANDROID_MAJOR_VERSION)), \

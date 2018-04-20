@@ -39,6 +39,8 @@ LOCAL_SRC_FILES := \
 
 LOCAL_MODULE := libmesa_pipe_loader
 
+LOCAL_GENERATED_SOURCES := $(MESA_DRI_OPTIONS_H)
+
 LOCAL_STATIC_LIBRARIES := libmesa_loader libmesa_util
 
 include $(GALLIUM_COMMON_MK)

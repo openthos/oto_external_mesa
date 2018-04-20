@@ -23,9 +23,12 @@
 
 ifeq ($(LOCAL_IS_HOST_MODULE),true)
 LOCAL_CFLAGS += -D_GNU_SOURCE
+else
+LOCAL_CLANG := $(if $(LOCAL_CLANG),$(LOCAL_CLANG),true)
 endif
 
 LOCAL_C_INCLUDES += \
+	external/libcxx/include \
 	$(MESA_TOP)/src \
 	$(MESA_TOP)/include
 
@@ -71,14 +74,13 @@ LOCAL_CFLAGS += \
 	-DHAVE_DLADDR \
 	-DHAVE_DL_ITERATE_PHDR \
 	-DHAVE_LINUX_FUTEX_H \
-	-DHAVE_ENDIAN_H \
 	-DHAVE_ZLIB \
 	-DMAJOR_IN_SYSMACROS \
 	-DTEXTURE_FLOAT_ENABLED \
 	-fvisibility=hidden \
 	-Wno-sign-compare
 
-LOCAL_CPPFLAGS += \
+LOCAL_CPPFLAGS += -std=c++11 \
 	-D__STDC_CONSTANT_MACROS \
 	-D__STDC_FORMAT_MACROS \
 	-D__STDC_LIMIT_MACROS \

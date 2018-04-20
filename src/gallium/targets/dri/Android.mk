@@ -31,6 +31,10 @@ LOCAL_MODULE_RELATIVE_PATH := $(MESA_DRI_MODULE_REL_PATH)
 LOCAL_SRC_FILES := target.c
 LOCAL_C_INCLUDES := $(call generated-sources-dir-for,STATIC_LIBRARIES,libmesa_util,,)
 LOCAL_CFLAGS :=
+LOCAL_LDLIBS := -lgcc
+LOCAL_CLANG := false
+
+LOCAL_GENERATED_SOURCES := $(MESA_DRI_OPTIONS_H)
 
 # We need --undefined-version as some functions in dri.sym may be missing
 # depending on which drivers are enabled or not. Otherwise, we get the error:
@@ -41,6 +45,7 @@ LOCAL_LDFLAGS := \
 
 LOCAL_SHARED_LIBRARIES := \
 	libbacktrace \
+	libc++ \
 	libdl \
 	liblog \
 	libglapi \

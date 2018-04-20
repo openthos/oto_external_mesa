@@ -48,6 +48,7 @@ $(intermediates)/common/sid_tables.h: $(LOCAL_PATH)/common/sid_tables.py $(LOCAL
 	$(transform-generated-source)
 
 LOCAL_C_INCLUDES := \
+	external/elfutils/0.153/libelf \
 	$(MESA_TOP)/include \
 	$(MESA_TOP)/src \
 	$(MESA_TOP)/src/amd/common \
