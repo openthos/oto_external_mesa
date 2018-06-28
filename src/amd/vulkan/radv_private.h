@@ -352,6 +352,7 @@ struct radv_pipeline_cache {
 struct radv_pipeline_key {
 	uint32_t instance_rate_inputs;
 	uint32_t instance_rate_divisors[MAX_VERTEX_ATTRIBS];
+	uint64_t vertex_alpha_adjust;
 	unsigned tess_input_vertices;
 	uint32_t col_format;
 	uint32_t is_int8;
@@ -1279,7 +1280,8 @@ struct radv_userdata_info *radv_lookup_user_sgpr(struct radv_pipeline *pipeline,
 						 gl_shader_stage stage,
 						 int idx);
 
-struct radv_shader_variant *radv_get_vertex_shader(struct radv_pipeline *pipeline);
+struct radv_shader_variant *radv_get_shader(struct radv_pipeline *pipeline,
+					    gl_shader_stage stage);
 
 struct radv_graphics_pipeline_create_info {
 	bool use_rectlist;

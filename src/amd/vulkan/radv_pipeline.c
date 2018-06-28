@@ -181,6 +181,47 @@ radv_pipeline_scratch_init(struct radv_device *device,
 	return VK_SUCCESS;
 }
 
+static uint32_t si_translate_blend_logic_op(VkLogicOp op)
+{
+	switch (op) {
+	case VK_LOGIC_OP_CLEAR:
+		return V_028808_ROP3_CLEAR;
+	case VK_LOGIC_OP_AND:
+		return V_028808_ROP3_AND;
+	case VK_LOGIC_OP_AND_REVERSE:
+		return V_028808_ROP3_AND_REVERSE;
+	case VK_LOGIC_OP_COPY:
+		return V_028808_ROP3_COPY;
+	case VK_LOGIC_OP_AND_INVERTED:
+		return V_028808_ROP3_AND_INVERTED;
+	case VK_LOGIC_OP_NO_OP:
+		return V_028808_ROP3_NO_OP;
+	case VK_LOGIC_OP_XOR:
+		return V_028808_ROP3_XOR;
+	case VK_LOGIC_OP_OR:
+		return V_028808_ROP3_OR;
+	case VK_LOGIC_OP_NOR:
+		return V_028808_ROP3_NOR;
+	case VK_LOGIC_OP_EQUIVALENT:
+		return V_028808_ROP3_EQUIVALENT;
+	case VK_LOGIC_OP_INVERT:
+		return V_028808_ROP3_INVERT;
+	case VK_LOGIC_OP_OR_REVERSE:
+		return V_028808_ROP3_OR_REVERSE;
+	case VK_LOGIC_OP_COPY_INVERTED:
+		return V_028808_ROP3_COPY_INVERTED;
+	case VK_LOGIC_OP_OR_INVERTED:
+		return V_028808_ROP3_OR_INVERTED;
+	case VK_LOGIC_OP_NAND:
+		return V_028808_ROP3_NAND;
+	case VK_LOGIC_OP_SET:
+		return V_028808_ROP3_SET;
+	default:
+		unreachable("Unhandled logic op");
+	}
+}
+
+
 static uint32_t si_translate_blend_function(VkBlendOp op)
 {
 	switch (op) {
@@ -463,6 +504,7 @@ radv_pipeline_compute_spi_color_formats(struct radv_pipeline *pipeline,
 	RADV_FROM_HANDLE(radv_render_pass, pass, pCreateInfo->renderPass);
 	struct radv_subpass *subpass = pass->subpasses + pCreateInfo->subpass;
 	unsigned col_format = 0;
+	unsigned num_targets;
 
 	for (unsigned i = 0; i < (blend->single_cb_enable ? 1 : subpass->color_count); ++i) {
 		unsigned cf;
@@ -487,6 +529,15 @@ radv_pipeline_compute_spi_color_formats(struct radv_pipeline *pipeline,
 	if (blend->mrt0_is_dual_src)
 		col_format |= (col_format & 0xf) << 4;
 	blend->spi_shader_col_format = col_format;
+
+	/* If the i-th target format is set, all previous target formats must
+	 * be non-zero to avoid hangs.
+	 */
+	num_targets = (util_last_bit(blend->spi_shader_col_format) + 3) / 4;
+	for (unsigned i = 0; i < num_targets; i++) {
+		if (!(blend->spi_shader_col_format & (0xf << (i * 4))))
+			blend->spi_shader_col_format |= V_028714_SPI_SHADER_32_R << (i * 4);
+	}
 }
 
 static bool
@@ -600,9 +651,9 @@ radv_pipeline_init_blend_state(struct radv_pipeline *pipeline,
 	}
 	blend.cb_color_control = 0;
 	if (vkblend->logicOpEnable)
-		blend.cb_color_control |= S_028808_ROP3(vkblend->logicOp | (vkblend->logicOp << 4));
+		blend.cb_color_control |= S_028808_ROP3(si_translate_blend_logic_op(vkblend->logicOp));
 	else
-		blend.cb_color_control |= S_028808_ROP3(0xcc);
+		blend.cb_color_control |= S_028808_ROP3(V_028808_ROP3_COPY);
 
 	blend.db_alpha_to_mask = S_028B70_ALPHA_TO_MASK_OFFSET0(2) |
 		S_028B70_ALPHA_TO_MASK_OFFSET1(2) |
@@ -1542,21 +1593,25 @@ static void si_multiwave_lds_size_workaround(struct radv_device *device,
 }
 
 struct radv_shader_variant *
-radv_get_vertex_shader(struct radv_pipeline *pipeline)
+radv_get_shader(struct radv_pipeline *pipeline,
+		gl_shader_stage stage)
 {
-	if (pipeline->shaders[MESA_SHADER_VERTEX])
-		return pipeline->shaders[MESA_SHADER_VERTEX];
-	if (pipeline->shaders[MESA_SHADER_TESS_CTRL])
-		return pipeline->shaders[MESA_SHADER_TESS_CTRL];
-	return pipeline->shaders[MESA_SHADER_GEOMETRY];
-}
-
-static struct radv_shader_variant *
-radv_get_tess_eval_shader(struct radv_pipeline *pipeline)
-{
-	if (pipeline->shaders[MESA_SHADER_TESS_EVAL])
-		return pipeline->shaders[MESA_SHADER_TESS_EVAL];
-	return pipeline->shaders[MESA_SHADER_GEOMETRY];
+	if (stage == MESA_SHADER_VERTEX) {
+		if (pipeline->shaders[MESA_SHADER_VERTEX])
+			return pipeline->shaders[MESA_SHADER_VERTEX];
+		if (pipeline->shaders[MESA_SHADER_TESS_CTRL])
+			return pipeline->shaders[MESA_SHADER_TESS_CTRL];
+		if (pipeline->shaders[MESA_SHADER_GEOMETRY])
+			return pipeline->shaders[MESA_SHADER_GEOMETRY];
+	} else if (stage == MESA_SHADER_TESS_EVAL) {
+		if (!radv_pipeline_has_tess(pipeline))
+			return NULL;
+		if (pipeline->shaders[MESA_SHADER_TESS_EVAL])
+			return pipeline->shaders[MESA_SHADER_TESS_EVAL];
+		if (pipeline->shaders[MESA_SHADER_GEOMETRY])
+			return pipeline->shaders[MESA_SHADER_GEOMETRY];
+	}
+	return pipeline->shaders[stage];
 }
 
 static struct radv_tessellation_state
@@ -1591,7 +1646,7 @@ calculate_tess_state(struct radv_pipeline *pipeline,
 		S_028B58_HS_NUM_OUTPUT_CP(num_tcs_output_cp);
 	tess.num_patches = num_patches;
 
-	struct radv_shader_variant *tes = radv_get_tess_eval_shader(pipeline);
+	struct radv_shader_variant *tes = radv_get_shader(pipeline, MESA_SHADER_TESS_EVAL);
 	unsigned type = 0, partitioning = 0, topology = 0, distribution_mode = 0;
 
 	switch (tes->info.tes.primitive_mode) {
@@ -1769,12 +1824,35 @@ radv_generate_graphics_pipeline_key(struct radv_pipeline *pipeline,
 	}
 
 	for (unsigned i = 0; i < input_state->vertexAttributeDescriptionCount; ++i) {
-		unsigned binding;
-		binding = input_state->pVertexAttributeDescriptions[i].binding;
+		unsigned location = input_state->pVertexAttributeDescriptions[i].location;
+		unsigned binding = input_state->pVertexAttributeDescriptions[i].binding;
 		if (binding_input_rate & (1u << binding)) {
-			unsigned location = input_state->pVertexAttributeDescriptions[i].location;
 			key.instance_rate_inputs |= 1u << location;
 			key.instance_rate_divisors[location] = instance_rate_divisors[binding];
+		}
+
+		if (pipeline->device->physical_device->rad_info.chip_class <= VI &&
+		    pipeline->device->physical_device->rad_info.family != CHIP_STONEY) {
+			VkFormat format = input_state->pVertexAttributeDescriptions[i].format;
+			uint64_t adjust;
+			switch(format) {
+			case VK_FORMAT_A2R10G10B10_SNORM_PACK32:
+			case VK_FORMAT_A2B10G10R10_SNORM_PACK32:
+				adjust = RADV_ALPHA_ADJUST_SNORM;
+				break;
+			case VK_FORMAT_A2R10G10B10_SSCALED_PACK32:
+			case VK_FORMAT_A2B10G10R10_SSCALED_PACK32:
+				adjust = RADV_ALPHA_ADJUST_SSCALED;
+				break;
+			case VK_FORMAT_A2R10G10B10_SINT_PACK32:
+			case VK_FORMAT_A2B10G10R10_SINT_PACK32:
+				adjust = RADV_ALPHA_ADJUST_SINT;
+				break;
+			default:
+				adjust = 0;
+				break;
+			}
+			key.vertex_alpha_adjust |= adjust << (2 * location);
 		}
 	}
 
@@ -1804,6 +1882,7 @@ radv_fill_shader_keys(struct radv_shader_variant_key *keys,
                       nir_shader **nir)
 {
 	keys[MESA_SHADER_VERTEX].vs.instance_rate_inputs = key->instance_rate_inputs;
+	keys[MESA_SHADER_VERTEX].vs.alpha_adjust = key->vertex_alpha_adjust;
 	for (unsigned i = 0; i < MAX_VERTEX_ATTRIBS; ++i)
 		keys[MESA_SHADER_VERTEX].vs.instance_rate_divisors[i] = key->instance_rate_divisors[i];
 
@@ -1895,6 +1974,8 @@ void radv_create_shaders(struct radv_pipeline *pipeline,
 				_mesa_sha1_compute(modules[i]->nir->info.name,
 				                   strlen(modules[i]->nir->info.name),
 				                   modules[i]->sha1);
+
+			pipeline->active_stages |= mesa_to_vk_shader_stage(i);
 		}
 	}
 
@@ -1910,10 +1991,6 @@ void radv_create_shaders(struct radv_pipeline *pipeline,
 
 	if (radv_create_shader_variants_from_pipeline_cache(device, cache, hash, pipeline->shaders) &&
 	    (!modules[MESA_SHADER_GEOMETRY] || pipeline->gs_copy_shader)) {
-		for (unsigned i = 0; i < MESA_SHADER_STAGES; ++i) {
-			if (pipeline->shaders[i])
-				pipeline->active_stages |= mesa_to_vk_shader_stage(i);
-		}
 		return;
 	}
 
@@ -1945,7 +2022,6 @@ void radv_create_shaders(struct radv_pipeline *pipeline,
 		nir[i] = radv_shader_compile_to_nir(device, modules[i],
 						    stage ? stage->pName : "main", i,
 						    stage ? stage->pSpecializationInfo : NULL);
-		pipeline->active_stages |= mesa_to_vk_shader_stage(i);
 
 		/* We don't want to alter meta shaders IR directly so clone it
 		 * first.
@@ -3076,7 +3152,7 @@ radv_pipeline_generate_vgt_vertex_reuse(struct radeon_winsys_cs *cs,
 
 	unsigned vtx_reuse_depth = 30;
 	if (radv_pipeline_has_tess(pipeline) &&
-	    radv_get_tess_eval_shader(pipeline)->info.tes.spacing == TESS_SPACING_FRACTIONAL_ODD) {
+	    radv_get_shader(pipeline, MESA_SHADER_TESS_EVAL)->info.tes.spacing == TESS_SPACING_FRACTIONAL_ODD) {
 		vtx_reuse_depth = 14;
 	}
 	radeon_set_context_reg(cs, R_028C58_VGT_VERTEX_REUSE_BLOCK_CNTL,
@@ -3236,7 +3312,7 @@ radv_compute_ia_multi_vgt_param_helpers(struct radv_pipeline *pipeline,
 	if (radv_pipeline_has_tess(pipeline)) {
 		/* SWITCH_ON_EOI must be set if PrimID is used. */
 		if (pipeline->shaders[MESA_SHADER_TESS_CTRL]->info.info.uses_prim_id ||
-		    radv_get_tess_eval_shader(pipeline)->info.info.uses_prim_id)
+		    radv_get_shader(pipeline, MESA_SHADER_TESS_EVAL)->info.info.uses_prim_id)
 			ia_multi_vgt_param.ia_switch_on_eoi = true;
 	}
 
@@ -3426,7 +3502,7 @@ radv_pipeline_init(struct radv_pipeline *pipeline,
 	if (loc->sgpr_idx != -1) {
 		pipeline->graphics.vtx_base_sgpr = pipeline->user_data_0[MESA_SHADER_VERTEX];
 		pipeline->graphics.vtx_base_sgpr += loc->sgpr_idx * 4;
-		if (radv_get_vertex_shader(pipeline)->info.info.vs.needs_draw_id)
+		if (radv_get_shader(pipeline, MESA_SHADER_VERTEX)->info.info.vs.needs_draw_id)
 			pipeline->graphics.vtx_emit_num = 3;
 		else
 			pipeline->graphics.vtx_emit_num = 2;

@@ -736,7 +736,7 @@ void radv_GetPhysicalDeviceFeatures2(
 		}
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT: {
 			VkPhysicalDeviceDescriptorIndexingFeaturesEXT *features =
-				(VkPhysicalDeviceDescriptorIndexingFeaturesEXT*)features;
+				(VkPhysicalDeviceDescriptorIndexingFeaturesEXT*)ext;
 			features->shaderInputAttachmentArrayDynamicIndexing = true;
 			features->shaderUniformTexelBufferArrayDynamicIndexing = true;
 			features->shaderStorageTexelBufferArrayDynamicIndexing = true;
@@ -968,9 +968,12 @@ void radv_GetPhysicalDeviceProperties2(
 							VK_SUBGROUP_FEATURE_BASIC_BIT |
 							VK_SUBGROUP_FEATURE_BALLOT_BIT |
 							VK_SUBGROUP_FEATURE_QUAD_BIT |
-							VK_SUBGROUP_FEATURE_SHUFFLE_BIT |
-							VK_SUBGROUP_FEATURE_SHUFFLE_RELATIVE_BIT |
 							VK_SUBGROUP_FEATURE_VOTE_BIT;
+			if (pdevice->rad_info.chip_class >= VI) {
+				properties->supportedOperations |=
+							VK_SUBGROUP_FEATURE_SHUFFLE_BIT |
+							VK_SUBGROUP_FEATURE_SHUFFLE_RELATIVE_BIT;
+			}
 			properties->quadOperationsInAllStages = true;
 			break;
 		}
@@ -3925,7 +3928,8 @@ radv_initialise_ds_surface(struct radv_device *device,
 		ds->db_z_info = S_028038_FORMAT(format) |
 			S_028038_NUM_SAMPLES(util_logbase2(iview->image->info.samples)) |
 			S_028038_SW_MODE(iview->image->surface.u.gfx9.surf.swizzle_mode) |
-			S_028038_MAXMIP(iview->image->info.levels - 1);
+			S_028038_MAXMIP(iview->image->info.levels - 1) |
+			S_028038_ZRANGE_PRECISION(1);
 		ds->db_stencil_info = S_02803C_FORMAT(stencil_format) |
 			S_02803C_SW_MODE(iview->image->surface.u.gfx9.stencil.swizzle_mode);
 
