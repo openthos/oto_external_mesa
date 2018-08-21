@@ -1374,6 +1374,20 @@ visit_tex_src(nir_tex_instr *instr, nir_foreach_src_cb cb, void *state)
 }
 
 static bool
+visit_call_src(nir_call_instr *instr, nir_foreach_src_cb cb, void *state)
+{
+   if (instr->return_deref && !visit_deref_src(instr->return_deref, cb, state))
+      return false;
+
+   for (unsigned i = 0; i < instr->num_params; i++) {
+      if (!visit_deref_src(instr->params[i], cb, state))
+         return false;
+   }
+
+   return true;
+}
+
+static bool
 visit_intrinsic_src(nir_intrinsic_instr *instr, nir_foreach_src_cb cb,
                     void *state)
 {
@@ -1449,7 +1463,8 @@ nir_foreach_src(nir_instr *instr, nir_foreach_src_cb cb, void *state)
          return false;
       break;
    case nir_instr_type_call:
-      /* Call instructions have no regular sources */
+      if (!visit_call_src(nir_instr_as_call(instr), cb, state))
+         return false;
       break;
    case nir_instr_type_load_const:
       /* Constant load instructions have no regular sources */
@@ -1742,6 +1757,9 @@ nir_ssa_def_components_read(const nir_ssa_def *def)
          return (1 << def->num_components) - 1;
       }
    }
+
+   if (!list_empty(&def->if_uses))
+      read_mask |= 1;
 
    return read_mask;
 }

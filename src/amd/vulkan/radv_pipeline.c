@@ -524,20 +524,21 @@ radv_pipeline_compute_spi_color_formats(struct radv_pipeline *pipeline,
 		col_format |= cf << (4 * i);
 	}
 
+	/* If the i-th target format is set, all previous target formats must
+	 * be non-zero to avoid hangs.
+	 */
+	num_targets = (util_last_bit(col_format) + 3) / 4;
+	for (unsigned i = 0; i < num_targets; i++) {
+		if (!(col_format & (0xf << (i * 4)))) {
+			col_format |= V_028714_SPI_SHADER_32_R << (i * 4);
+		}
+	}
+
 	blend->cb_shader_mask = ac_get_cb_shader_mask(col_format);
 
 	if (blend->mrt0_is_dual_src)
 		col_format |= (col_format & 0xf) << 4;
 	blend->spi_shader_col_format = col_format;
-
-	/* If the i-th target format is set, all previous target formats must
-	 * be non-zero to avoid hangs.
-	 */
-	num_targets = (util_last_bit(blend->spi_shader_col_format) + 3) / 4;
-	for (unsigned i = 0; i < num_targets; i++) {
-		if (!(blend->spi_shader_col_format & (0xf << (i * 4))))
-			blend->spi_shader_col_format |= V_028714_SPI_SHADER_32_R << (i * 4);
-	}
 }
 
 static bool
@@ -621,7 +622,7 @@ radv_blend_check_commutativity(struct radv_blend_state *blend,
 		(1u << VK_BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA);
 
 	if (dst == VK_BLEND_FACTOR_ONE &&
-	    (src_allowed && (1u << src))) {
+	    (src_allowed & (1u << src))) {
 		/* Addition is commutative, but floating point addition isn't
 		 * associative: subtle changes can be introduced via different
 		 * rounding. Be conservative, only enable for min and max.
@@ -2153,7 +2154,7 @@ void radv_create_shaders(struct radv_pipeline *pipeline,
 
 	for (int i = 0; i < MESA_SHADER_STAGES; ++i) {
 		free(codes[i]);
-		if (modules[i]) {
+		if (nir[i]) {
 			if (!pipeline->device->keep_shader_info)
 				ralloc_free(nir[i]);
 
@@ -2436,7 +2437,7 @@ radv_compute_bin_size(struct radv_pipeline *pipeline, const VkGraphicsPipelineCr
 	                       pipeline->device->physical_device->rad_info.max_se);
 	unsigned log_num_se = util_logbase2_ceil(pipeline->device->physical_device->rad_info.max_se);
 
-	unsigned total_samples = 1u << G_028BE0_MSAA_NUM_SAMPLES(pipeline->graphics.ms.pa_sc_mode_cntl_1);
+	unsigned total_samples = 1u << G_028BE0_MSAA_NUM_SAMPLES(pipeline->graphics.ms.pa_sc_aa_config);
 	unsigned ps_iter_samples = 1u << G_028804_PS_ITER_SAMPLES(pipeline->graphics.ms.db_eqaa);
 	unsigned effective_samples = total_samples;
 	unsigned color_bytes_per_pixel = 0;
@@ -2461,7 +2462,7 @@ radv_compute_bin_size(struct radv_pipeline *pipeline, const VkGraphicsPipelineCr
 	}
 
 	const struct radv_bin_size_entry *color_entry = color_size_table[log_num_rb_per_se][log_num_se];
-	while(color_entry->bpp <= color_bytes_per_pixel)
+	while(color_entry[1].bpp <= color_bytes_per_pixel)
 		++color_entry;
 
 	extent = color_entry->extent;
@@ -2475,7 +2476,7 @@ radv_compute_bin_size(struct radv_pipeline *pipeline, const VkGraphicsPipelineCr
 		unsigned ds_bytes_per_pixel = 4 * (depth_coeff + stencil_coeff) * total_samples;
 
 		const struct radv_bin_size_entry *ds_entry = ds_size_table[log_num_rb_per_se][log_num_se];
-		while(ds_entry->bpp <= ds_bytes_per_pixel)
+		while(ds_entry[1].bpp <= ds_bytes_per_pixel)
 			++ds_entry;
 
 		extent.width = MIN2(extent.width, ds_entry->extent.width);

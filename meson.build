@@ -54,7 +54,7 @@ with_osmesa = get_option('osmesa')
 with_swr_arches = get_option('swr-arches').split(',')
 with_tools = get_option('tools').split(',')
 if with_tools.contains('all')
-  with_tools = ['freedreno', 'glsl', 'intel', 'nir', 'nouveau']
+  with_tools = ['freedreno', 'glsl', 'intel', 'nir', 'nouveau', 'xvmc']
 endif
 if get_option('texture-float')
   pre_args += '-DTEXTURE_FLOAT_ENABLED'
@@ -420,16 +420,17 @@ elif not (with_gallium_r300 or with_gallium_r600 or with_gallium_radeonsi or
   else
     _vdpau = 'false'
   endif
-elif _vdpau == 'auto'
-  _vdpau = 'true'
 endif
-with_gallium_vdpau = _vdpau == 'true'
 dep_vdpau = null_dep
-if with_gallium_vdpau
-  dep_vdpau = dependency('vdpau', version : '>= 1.1')
-  dep_vdpau = declare_dependency(
-    compile_args : run_command(prog_pkgconfig, ['vdpau', '--cflags']).stdout().split()
-  )
+with_gallium_vdpau = false
+if _vdpau != 'false'
+  dep_vdpau = dependency('vdpau', version : '>= 1.1', required : _vdpau == 'true')
+  if dep_vdpau.found()
+    dep_vdpau = declare_dependency(
+      compile_args : run_command(prog_pkgconfig, ['vdpau', '--cflags']).stdout().split()
+    )
+    with_gallium_vdpau = true
+  endif
 endif
 
 if with_gallium_vdpau
@@ -459,13 +460,12 @@ elif not (with_gallium_r600 or with_gallium_nouveau)
   else
     _xvmc = 'false'
   endif
-elif _xvmc == 'auto'
-  _xvmc = 'true'
 endif
-with_gallium_xvmc = _xvmc == 'true'
 dep_xvmc = null_dep
-if with_gallium_xvmc
-  dep_xvmc = dependency('xvmc', version : '>= 1.0.6')
+with_gallium_xvmc = false
+if _xvmc != 'false'
+  dep_xvmc = dependency('xvmc', version : '>= 1.0.6', required : _xvmc == 'true')
+  with_gallium_xvmc = dep_xvmc.found()
 endif
 
 xvmc_drivers_path = get_option('xvmc-libs-path')
@@ -581,13 +581,16 @@ elif not (with_gallium_r600 or with_gallium_radeonsi or with_gallium_nouveau)
 elif _va == 'auto'
   _va = 'true'
 endif
-with_gallium_va = _va == 'true'
+with_gallium_va = false
 dep_va = null_dep
-if with_gallium_va
-  dep_va = dependency('libva', version : '>= 0.39.0')
-  dep_va_headers = declare_dependency(
-    compile_args : run_command(prog_pkgconfig, ['libva', '--cflags']).stdout().split()
-  )
+if _va != 'false'
+  dep_va = dependency('libva', version : '>= 0.38.0', required : _va == 'true')
+  if dep_va.found()
+    dep_va_headers = declare_dependency(
+      compile_args : run_command(prog_pkgconfig, ['libva', '--cflags']).stdout().split()
+    )
+    with_gallium_va = true
+  endif
 endif
 
 va_drivers_path = get_option('va-libs-path')
@@ -925,7 +928,7 @@ elif cc.has_header_symbol('sys/mkdev.h', 'major')
   pre_args += '-DMAJOR_IN_MKDEV'
 endif
 
-foreach h : ['xlocale.h', 'sys/sysctl.h', 'linux/futex.h', 'endian.h']
+foreach h : ['xlocale.h', 'sys/sysctl.h', 'linux/futex.h', 'endian.h', 'dlfcn.h']
   if cc.compiles('#include <@0@>'.format(h), name : '@0@'.format(h))
     pre_args += '-DHAVE_@0@'.format(h.to_upper().underscorify())
   endif
@@ -954,7 +957,7 @@ if cc.links('''
       freelocale(loc);
       return 0;
     }''',
-    extra_args : pre_args,
+    args : pre_args,
     name : 'strtod has locale support')
   pre_args += '-DHAVE_STRTOD_L'
 endif
@@ -1340,17 +1343,23 @@ endforeach
 
 inc_include = include_directories('include')
 
-gl_priv_reqs = [
-  'x11', 'xext', 'xdamage >= 1.1', 'xfixes', 'x11-xcb', 'xcb',
-  'xcb-glx >= 1.8.1']
+gl_priv_reqs = []
+
+if with_glx == 'xlib' or with_glx == 'gallium-xlib'
+  gl_priv_reqs += ['x11', 'xext', 'xcb']
+elif with_glx == 'dri'
+  gl_priv_reqs += [
+    'x11', 'xext', 'xdamage >= 1.1', 'xfixes', 'x11-xcb', 'xcb',
+    'xcb-glx >= 1.8.1']
+  if with_dri_platform == 'drm'
+    gl_priv_reqs += 'xcb-dri2 >= 1.8'
+  endif
+endif
 if dep_libdrm.found()
   gl_priv_reqs += 'libdrm >= 2.4.75'
 endif
 if dep_xxf86vm.found()
   gl_priv_reqs += 'xxf86vm'
-endif
-if with_dri_platform == 'drm'
-  gl_priv_reqs += 'xcb-dri2 >= 1.8'
 endif
 
 gl_priv_libs = []

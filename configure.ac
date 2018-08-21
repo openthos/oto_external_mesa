@@ -880,6 +880,7 @@ AC_HEADER_MAJOR
 AC_CHECK_HEADER([xlocale.h], [DEFINES="$DEFINES -DHAVE_XLOCALE_H"])
 AC_CHECK_HEADER([sys/sysctl.h], [DEFINES="$DEFINES -DHAVE_SYS_SYSCTL_H"])
 AC_CHECK_HEADERS([endian.h])
+AC_CHECK_HEADER([dlfcn.h], [DEFINES="$DEFINES -DHAVE_DLFCN_H"])
 AC_CHECK_FUNC([strtof], [DEFINES="$DEFINES -DHAVE_STRTOF"])
 AC_CHECK_FUNC([mkostemp], [DEFINES="$DEFINES -DHAVE_MKOSTEMP"])
 AC_CHECK_FUNC([timespec_get], [DEFINES="$DEFINES -DHAVE_TIMESPEC_GET"])
@@ -1510,15 +1511,15 @@ fi
 AC_ARG_WITH([gl-lib-name],
   [AS_HELP_STRING([--with-gl-lib-name@<:@=NAME@:>@],
     [specify GL library name @<:@default=GL@:>@])],
-  [GL_LIB=$withval],
-  [GL_LIB="$DEFAULT_GL_LIB_NAME"])
+  [AC_MSG_ERROR([--with-gl-lib-name is no longer supported. Rename the library manually if needed.])],
+  [])
 AC_ARG_WITH([osmesa-lib-name],
   [AS_HELP_STRING([--with-osmesa-lib-name@<:@=NAME@:>@],
     [specify OSMesa library name @<:@default=OSMesa@:>@])],
-  [OSMESA_LIB=$withval],
-  [OSMESA_LIB=OSMesa])
-AS_IF([test "x$GL_LIB" = xyes], [GL_LIB="$DEFAULT_GL_LIB_NAME"])
-AS_IF([test "x$OSMESA_LIB" = xyes], [OSMESA_LIB=OSMesa])
+  [AC_MSG_ERROR([--with-osmesa-lib-name is no longer supported. Rename the library manually if needed.])],
+  [])
+GL_LIB="$DEFAULT_GL_LIB_NAME"
+OSMESA_LIB=OSMesa
 
 dnl
 dnl Mangled Mesa support
@@ -1530,12 +1531,24 @@ AC_ARG_ENABLE([mangling],
   [enable_mangling=no]
 )
 if test "x${enable_mangling}" = "xyes" ; then
+  if test "x$enable_libglvnd" = xyes; then
+    AC_MSG_ERROR([Conflicting options --enable-mangling and --enable-libglvnd.])
+  fi
   DEFINES="${DEFINES} -DUSE_MGL_NAMESPACE"
   GL_LIB="Mangled${GL_LIB}"
   OSMESA_LIB="Mangled${OSMESA_LIB}"
 fi
 AC_SUBST([GL_LIB])
 AC_SUBST([OSMESA_LIB])
+
+dnl HACK when building glx + glvnd we ship gl.pc, despite that glvnd should do it
+dnl Thus we need to use GL as a DSO name.
+if test "x$enable_libglvnd" = xyes -a "x$enable_glx" != xno; then
+  GL_PKGCONF_LIB="GL"
+else
+  GL_PKGCONF_LIB="$GL_LIB"
+fi
+AC_SUBST([GL_PKGCONF_LIB])
 
 # Check for libdrm
 PKG_CHECK_MODULES([LIBDRM], [libdrm >= $LIBDRM_REQUIRED],
@@ -1663,6 +1676,8 @@ xxlib | xgallium-xlib)
     ;;
 xdri)
     # DRI-based GLX
+
+    require_dri_shared_libs_and_glapi "GLX"
 
     # find the DRI deps for libGL
     dri_modules="x11 xext xdamage >= $XDAMAGE_REQUIRED xfixes x11-xcb xcb xcb-glx >= $XCBGLX_REQUIRED"
@@ -2219,13 +2234,13 @@ else
     have_vdpau_platform=no
 fi
 
-if echo $platforms | grep -q "x11\|drm"; then
+if echo $platforms | egrep -q "x11|drm"; then
     have_omx_platform=yes
 else
     have_omx_platform=no
 fi
 
-if echo $platforms | grep -q "x11\|drm\|wayland"; then
+if echo $platforms | egrep -q "x11|drm|wayland"; then
     have_va_platform=yes
 else
     have_va_platform=no

@@ -2364,10 +2364,19 @@ fs_visitor::opt_algebraic()
             break;
 
          if (inst->saturate) {
-            if (inst->dst.type != inst->src[0].type)
+            /* Full mixed-type saturates don't happen.  However, we can end up
+             * with things like:
+             *
+             *    mov.sat(8) g21<1>DF       -1F
+             *
+             * Other mixed-size-but-same-base-type cases may also be possible.
+             */
+            if (inst->dst.type != inst->src[0].type &&
+                inst->dst.type != BRW_REGISTER_TYPE_DF &&
+                inst->src[0].type != BRW_REGISTER_TYPE_F)
                assert(!"unimplemented: saturate mixed types");
 
-            if (brw_saturate_immediate(inst->dst.type,
+            if (brw_saturate_immediate(inst->src[0].type,
                                        &inst->src[0].as_brw_reg())) {
                inst->saturate = false;
                progress = true;
@@ -4987,6 +4996,25 @@ get_fpu_lowered_simd_width(const struct gen_device_info *devinfo,
       }
    }
 
+   if (devinfo->gen < 6) {
+      /* From the G45 PRM, Volume 4 Page 361:
+       *
+       *    "Operand Alignment Rule: With the exceptions listed below, a
+       *     source/destination operand in general should be aligned to even
+       *     256-bit physical register with a region size equal to two 256-bit
+       *     physical registers."
+       *
+       * Normally we enforce this by allocating virtual registers to the
+       * even-aligned class.  But we need to handle payload registers.
+       */
+      for (unsigned i = 0; i < inst->sources; i++) {
+         if (inst->src[i].file == FIXED_GRF && (inst->src[i].nr & 1) &&
+             inst->size_read(i) > REG_SIZE) {
+            max_width = MIN2(max_width, 8);
+         }
+      }
+   }
+
    /* From the IVB PRMs:
     *  "When an instruction is SIMD32, the low 16 bits of the execution mask
     *   are applied for both halves of the SIMD32 instruction. If different
@@ -5588,16 +5616,49 @@ fs_visitor::lower_simd_width()
           * after \p inst, inst->next is a moving target and we need to save
           * it off here so that we insert the zip instructions in the right
           * place.
+          *
+          * Since we're inserting split instructions after after_inst, the
+          * instructions will end up in the reverse order that we insert them.
+          * However, certain render target writes require that the low group
+          * instructions come before the high group.  From the Ivy Bridge PRM
+          * Vol. 4, Pt. 1, Section 3.9.11:
+          *
+          *    "If multiple SIMD8 Dual Source messages are delivered by the
+          *    pixel shader thread, each SIMD8_DUALSRC_LO message must be
+          *    issued before the SIMD8_DUALSRC_HI message with the same Slot
+          *    Group Select setting."
+          *
+          * And, from Section 3.9.11.1 of the same PRM:
+          *
+          *    "When SIMD32 or SIMD16 PS threads send render target writes
+          *    with multiple SIMD8 and SIMD16 messages, the following must
+          *    hold:
+          *
+          *    All the slots (as described above) must have a corresponding
+          *    render target write irrespective of the slot's validity. A slot
+          *    is considered valid when at least one sample is enabled. For
+          *    example, a SIMD16 PS thread must send two SIMD8 render target
+          *    writes to cover all the slots.
+          *
+          *    PS thread must send SIMD render target write messages with
+          *    increasing slot numbers. For example, SIMD16 thread has
+          *    Slot[15:0] and if two SIMD8 render target writes are used, the
+          *    first SIMD8 render target write must send Slot[7:0] and the
+          *    next one must send Slot[15:8]."
+          *
+          * In order to make low group instructions come before high group
+          * instructions (this is required for some render target writes), we
+          * split from the highest group to lowest.
           */
          exec_node *const after_inst = inst->next;
-         for (unsigned i = 0; i < n; i++) {
+         for (int i = n - 1; i >= 0; i--) {
             /* Emit a copy of the original instruction with the lowered width.
              * If the EOT flag was set throw it away except for the last
              * instruction to avoid killing the thread prematurely.
              */
             fs_inst split_inst = *inst;
             split_inst.exec_size = lower_width;
-            split_inst.eot = inst->eot && i == 0;
+            split_inst.eot = inst->eot && i == n - 1;
 
             /* Select the correct channel enables for the i-th group, then
              * transform the sources and destination and emit the lowered
@@ -6236,6 +6297,7 @@ fs_visitor::optimize()
    if (OPT(lower_load_payload)) {
       split_virtual_grfs();
       OPT(register_coalesce);
+      OPT(lower_simd_width);
       OPT(compute_to_mrf);
       OPT(dead_code_eliminate);
    }
@@ -6792,14 +6854,17 @@ brw_compute_flat_inputs(struct brw_wm_prog_data *prog_data,
    prog_data->flat_inputs = 0;
 
    nir_foreach_variable(var, &shader->inputs) {
-      int input_index = prog_data->urb_setup[var->data.location];
+      unsigned slots = glsl_count_attribute_slots(var->type, false);
+      for (unsigned s = 0; s < slots; s++) {
+         int input_index = prog_data->urb_setup[var->data.location + s];
 
-      if (input_index < 0)
-	 continue;
+         if (input_index < 0)
+            continue;
 
-      /* flat shading */
-      if (var->data.interpolation == INTERP_MODE_FLAT)
-         prog_data->flat_inputs |= (1 << input_index);
+         /* flat shading */
+         if (var->data.interpolation == INTERP_MODE_FLAT)
+            prog_data->flat_inputs |= 1 << input_index;
+      }
    }
 }
 

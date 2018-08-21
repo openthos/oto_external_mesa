@@ -624,7 +624,7 @@ static int gfx6_compute_surface(ADDR_HANDLE addrlib,
 		 config->info.levels == 1);
 
 	AddrSurfInfoIn.flags.noStencil = (surf->flags & RADEON_SURF_SBUFFER) == 0;
-	AddrSurfInfoIn.flags.compressZ = AddrSurfInfoIn.flags.depth;
+	AddrSurfInfoIn.flags.compressZ = !!(surf->flags & RADEON_SURF_Z_OR_SBUFFER);
 
 	/* On CI/VI, the DB uses the same pitch and tile mode (except tilesplit)
 	 * for Z and stencil. This can cause a number of problems which we work
@@ -1111,7 +1111,7 @@ static int gfx9_compute_miptree(ADDR_HANDLE addrlib,
 				/* This counter starts from 1 instead of 0. */
 				xin.surfIndex = p_atomic_inc_return(config->info.fmask_surf_index);
 				xin.flags = in->flags;
-				xin.swizzleMode = in->swizzleMode;
+				xin.swizzleMode = fin.swizzleMode;
 				xin.resourceType = in->resourceType;
 				xin.format = in->format;
 				xin.numSamples = in->numSamples;
