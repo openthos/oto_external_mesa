@@ -70,6 +70,7 @@ $(intermediates)/util/u_format_table.c: $(intermediates)/%.c: $(LOCAL_PATH)/%.py
 	$(transform-generated-source)
 
 LOCAL_GENERATED_SOURCES += $(MESA_GEN_NIR_H)
+LOCAL_GENERATED_SOURCES += $(addprefix $(call generated-sources-dir-for,STATIC_LIBRARIES,libLLVM60Core)/llvm/IR/,Attributes.gen Intrinsics.gen)
 
 include $(GALLIUM_COMMON_MK)
 include $(BUILD_STATIC_LIBRARY)

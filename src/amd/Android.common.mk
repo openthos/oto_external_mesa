@@ -40,6 +40,7 @@ LOCAL_CFLAGS += -DFORCE_BUILD_AMDGPU   # instructs LLVM to declare LLVMInitializ
 LOCAL_MODULE_CLASS := STATIC_LIBRARIES
 intermediates := $(call local-generated-sources-dir)
 LOCAL_GENERATED_SOURCES := $(addprefix $(intermediates)/, $(AMD_GENERATED_FILES))
+LOCAL_GENERATED_SOURCES += $(addprefix $(call generated-sources-dir-for,STATIC_LIBRARIES,libLLVM60Core)/llvm/IR/,Attributes.gen Intrinsics.gen)
 
 $(LOCAL_GENERATED_SOURCES): PRIVATE_PYTHON := $(MESA_PYTHON2)
 $(LOCAL_GENERATED_SOURCES): PRIVATE_CUSTOM_TOOL = $(PRIVATE_PYTHON) $^ > $@
