@@ -34,7 +34,7 @@ LOCAL_CFLAGS :=
 LOCAL_LDLIBS := -lgcc
 LOCAL_CLANG := false
 
-LOCAL_GENERATED_SOURCES := $(MESA_DRI_OPTIONS_H)
+LOCAL_GENERATED_SOURCES := $(MESA_DRI_OPTIONS_H) $(MESA_RADEONSI_GEN_H)
 
 # We need --undefined-version as some functions in dri.sym may be missing
 # depending on which drivers are enabled or not. Otherwise, we get the error:

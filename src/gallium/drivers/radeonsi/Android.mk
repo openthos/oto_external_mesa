@@ -48,7 +48,10 @@ intermediates := $(call local-generated-sources-dir)
 
 # We need to get NIR's generated headers.
 LOCAL_GENERATED_SOURCES := $(MESA_GEN_NIR_H)
-LOCAL_GENERATED_SOURCES += $(addprefix $(intermediates)/radeonsi/,$(GENERATED_SOURCES))
+
+# gallium_dri needs the header
+MESA_RADEONSI_GEN_H := $(addprefix $(intermediates)/radeonsi/,$(GENERATED_SOURCES))
+LOCAL_GENERATED_SOURCES += $(MESA_RADEONSI_GEN_H)
 
 GEN_DRIINFO_INPUTS := \
 	$(MESA_TOP)/src/gallium/auxiliary/pipe-loader/driinfo_gallium.h \
