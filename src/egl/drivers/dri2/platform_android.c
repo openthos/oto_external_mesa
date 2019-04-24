@@ -1222,7 +1222,7 @@ droid_open_device_drm_gralloc(_EGLDisplay *disp)
        property_get("ro.hardware.hwcomposer", buf, NULL) > 0) {
       dri2_dpy->fd = fcntl(fd, F_DUPFD_CLOEXEC, 3);
    } else {
-      const char *device_name = drmGetRenderDeviceNameFromFd(fd);
+      char *device_name = drmGetRenderDeviceNameFromFd(fd);
       dri2_dpy->fd = loader_open_device(device_name);
       free(device_name);
    }
